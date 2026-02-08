@@ -1,1 +1,63 @@
-Flask==2.3.3
+annotated-doc==0.0.4
+    # via fastapi
+annotated-types==0.7.0
+    # via pydantic
+anyio==4.12.1
+    # via starlette
+blinker==1.9.0
+    # via flask
+certifi==2026.1.4
+    # via requests
+charset-normalizer==3.4.4
+    # via requests
+click==8.3.1
+    # via
+    #   flask
+    #   uvicorn
+fastapi==0.128.5
+    # via workspace (pyproject.toml)
+flask==3.1.2
+    # via workspace (pyproject.toml)
+h11==0.16.0
+    # via uvicorn
+idna==3.11
+    # via
+    #   anyio
+    #   requests
+itsdangerous==2.2.0
+    # via flask
+jinja2==3.1.6
+    # via flask
+markupsafe==3.0.3
+    # via
+    #   flask
+    #   jinja2
+    #   werkzeug
+psutil==7.2.2
+    # via workspace (pyproject.toml)
+pydantic==2.12.5
+    # via fastapi
+pydantic-core==2.41.5
+    # via pydantic
+requests==2.32.5
+    # via workspace (pyproject.toml)
+starlette==0.52.1
+    # via fastapi
+typing-extensions==4.15.0
+    # via
+    #   anyio
+    #   fastapi
+    #   pydantic
+    #   pydantic-core
+    #   starlette
+    #   typing-inspection
+typing-inspection==0.4.2
+    # via
+    #   fastapi
+    #   pydantic
+urllib3==2.6.3
+    # via requests
+uvicorn==0.40.0
+    # via workspace (pyproject.toml)
+werkzeug==3.1.5
+    # via flask
