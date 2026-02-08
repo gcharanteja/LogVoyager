@@ -61,3 +61,4 @@ uvicorn==0.40.0
     # via workspace (pyproject.toml)
 werkzeug==3.1.5
     # via flask
+gunicorn>=23.0.0
