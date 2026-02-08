@@ -1,0 +1,223 @@
+#!/usr/bin/env python3
+"""
+PyMon - Automatic Python Script Monitor
+Usage: pymon <script.py> [args...] or activate for auto-monitoring
+"""
+
+import sys
+import os
+import subprocess
+
+# Add the workspace to path
+WORKSPACE = "/project/workspace"
+RUNNER_PATH = os.path.join(WORKSPACE, "runner.py")
+
+def main():
+    if len(sys.argv) < 2:
+        print("🔍 PyMon - Python Script Monitor")
+        print("\n📚 Usage:")
+        print("  pymon <script.py> [args...]  - Run script with monitoring")
+        print("  pymon activate               - Install as default python3")
+        print("  pymon deactivate             - Remove from default")
+        print("  pymon status                 - Check monitoring status")
+        print("  pymon help                   - Show this help")
+        print("\n💡 Examples:")
+        print("  pymon err.py")
+        print("  pymon train.py --epochs 100")
+        sys.exit(1)
+    
+    command = sys.argv[1]
+    
+    if command == "activate":
+        activate_monitoring()
+    elif command == "deactivate":
+        deactivate_monitoring()
+    elif command == "status":
+        show_status()
+    elif command == "help":
+        show_help()
+    else:
+        # Run the script with monitoring
+        run_with_monitoring()
+
+def run_with_monitoring():
+    """Run a Python script through the runner for monitoring"""
+    # Pass all arguments after 'pymon' to runner.py
+    args = [sys.executable, RUNNER_PATH] + sys.argv[1:]
+    
+    try:
+        result = subprocess.run(args)
+        sys.exit(result.returncode)
+    except KeyboardInterrupt:
+        print("\n⚠️  Monitoring interrupted by user")
+        sys.exit(130)
+    except Exception as e:
+        print(f"❌ Error running monitor: {e}")
+        sys.exit(1)
+
+def activate_monitoring():
+    """Install pymon as the default python3 command"""
+    print("🚀 Activating Python monitoring globally...")
+    
+    shell = os.environ.get('SHELL', '/bin/bash')
+    
+    if 'zsh' in shell:
+        rc_file = os.path.expanduser("~/.zshrc")
+    else:
+        rc_file = os.path.expanduser("~/.bashrc")
+    
+    pymon_path = os.path.abspath(__file__)
+    alias_line = f'\n# PyMon - Auto monitoring\nalias python3="{pymon_path}"\n'
+    
+    # Check if already activated
+    if os.path.exists(rc_file):
+        with open(rc_file, 'r') as f:
+            content = f.read()
+            if 'PyMon - Auto monitoring' in content:
+                print("⚠️  PyMon is already activated!")
+                return
+    
+    # Add alias
+    with open(rc_file, 'a') as f:
+        f.write(alias_line)
+    
+    print("✅ Monitoring activated!")
+    print(f"   Modified: {rc_file}")
+    print(f"\n🔄 Please run: source {rc_file}")
+    print("   Or restart your terminal")
+    print("\n🎯 Now 'python3 script.py' will automatically monitor!")
+
+def deactivate_monitoring():
+    """Remove pymon from default"""
+    print("🔴 Deactivating monitoring...")
+    
+    shell = os.environ.get('SHELL', '/bin/bash')
+    
+    if 'zsh' in shell:
+        rc_file = os.path.expanduser("~/.zshrc")
+    else:
+        rc_file = os.path.expanduser("~/.bashrc")
+    
+    if not os.path.exists(rc_file):
+        print("⚠️  No configuration file found")
+        return
+    
+    # Read and remove PyMon lines
+    with open(rc_file, 'r') as f:
+        lines = f.readlines()
+    
+    new_lines = []
+    skip_next = False
+    found = False
+    
+    for i, line in enumerate(lines):
+        if '# PyMon - Auto monitoring' in line:
+            found = True
+            skip_next = True
+            continue
+        if skip_next and 'alias python3=' in line:
+            skip_next = False
+            continue
+        new_lines.append(line)
+    
+    if found:
+        with open(rc_file, 'w') as f:
+            f.writelines(new_lines)
+        print("✅ Monitoring deactivated!")
+        print(f"   Modified: {rc_file}")
+        print(f"\n🔄 Please run: source {rc_file}")
+        print("   Or restart your terminal")
+    else:
+        print("⚠️  PyMon was not activated")
+
+def show_status():
+    """Show current monitoring status"""
+    print("📊 PyMon Status")
+    print("=" * 50)
+    print(f"🔧 Runner:     {RUNNER_PATH}")
+    print(f"🌐 Server:     http://localhost:5000")
+    print(f"💾 Data file:  {os.path.join(WORKSPACE, 'data.json')}")
+    print(f"📁 Workspace:  {WORKSPACE}")
+    
+    # Check if activated
+    shell = os.environ.get('SHELL', '/bin/bash')
+    rc_file = os.path.expanduser("~/.zshrc" if 'zsh' in shell else "~/.bashrc")
+    
+    activated = False
+    if os.path.exists(rc_file):
+        with open(rc_file, 'r') as f:
+            if 'PyMon - Auto monitoring' in f.read():
+                activated = True
+    
+    status_emoji = "✅" if activated else "❌"
+    print(f"{status_emoji} Status:    {'Active' if activated else 'Inactive'}")
+    
+    if not activated:
+        print("\n💡 Tip: Run 'pymon activate' to enable auto-monitoring")
+    
+    # Check if server is running
+    try:
+        import requests
+        response = requests.get("http://localhost:5000/view", timeout=2)
+        print("🟢 Server:    Running")
+    except:
+        print("🔴 Server:    Not running")
+        print("   Start with: python3 server.py")
+
+def show_help():
+    """Show detailed help"""
+    print("""
+🔍 PyMon - Python Script Monitor
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📖 DESCRIPTION:
+   Monitor Python scripts with automatic logging, system metrics,
+   and remote data collection.
+
+🎯 USAGE:
+   pymon <script.py> [args...]  Run script with monitoring
+   pymon activate               Enable auto-monitoring
+   pymon deactivate             Disable auto-monitoring
+   pymon status                 Show current status
+   pymon help                   Show this help
+
+💡 EXAMPLES:
+   # Run a script with monitoring
+   pymon train.py --epochs 100
+   
+   # Enable automatic monitoring
+   pymon activate
+   
+   # Now python3 automatically monitors!
+   python3 train.py
+   
+   # Check status
+   pymon status
+   
+   # Disable when done
+   pymon deactivate
+
+📊 FEATURES:
+   • Captures stdout/stderr
+   • System metrics (CPU, RAM, disk, network)
+   • Timestamped structured logs
+   • Remote data storage
+   • Unique run IDs
+   • Error tracking
+
+🌐 SERVER:
+   Start the server before monitoring:
+   python3 server.py
+   
+   View logs:
+   curl http://localhost:5000/view
+
+📁 FILES:
+   • runner.py  - Monitoring wrapper
+   • server.py  - Data collection server
+   • data.json  - Stored execution logs
+   • pymon      - This CLI tool
+""")
+
+if __name__ == "__main__":
+    main()

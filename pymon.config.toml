@@ -1,0 +1,24 @@
+[server]
+# Remote server URL - users can override this
+url = "https://abc.com/post"
+# url = "http://localhost:5000/post"  # for local testing
+timeout = 10
+
+[monitoring]
+# What to capture
+capture_stdout = true
+capture_stderr = true
+capture_system_metrics = true
+capture_file_listing = true
+
+[metrics]
+# System metrics to collect
+cpu = true
+memory = true
+disk = true
+network = true
+
+[display]
+# Output formatting
+show_progress = true
+verbose = false
