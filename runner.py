@@ -10,6 +10,9 @@ import time
 import platform
 import subprocess
 
+# Get the directory of this script
+SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
+
 # Load configuration
 def load_config():
     """Load configuration from pymon.config.toml or environment variables"""
@@ -18,19 +21,18 @@ def load_config():
         'timeout': int(os.environ.get('PYMON_TIMEOUT', '10'))
     }
     
-    # Try to load from config file
-    config_file = os.path.join(os.path.dirname(__file__), 'pymon.config.toml')
+    # Try to load from config file in the same directory as this script
+    config_file = os.path.join(SCRIPT_DIR, 'pymon.config.toml')
     if os.path.exists(config_file):
         try:
-            if sys.version_info >= (3, 11):
-                import tomllib
-            else:
-                import tomli
-            with open(config_file, 'rb') as f:
-                toml_config = tomllib.load(f) if sys.version_info >= (3, 11) else tomli.load(f)
-                config['server_url'] = toml_config.get('server', {}).get('url', config['server_url'])
-                config['timeout'] = toml_config.get('server', {}).get('timeout', config['timeout'])
-        except:
+            with open(config_file, 'r') as f:
+                for line in f:
+                    if 'url =' in line:
+                        config['server_url'] = line.split('=')[1].strip().strip('"')
+                    elif 'timeout =' in line:
+                        config['timeout'] = int(line.split('=')[1].strip())
+        except Exception as e:
+            print(f"Warning: Could not parse config file: {e}")
             pass  # Use defaults if config file can't be loaded
     
     return config

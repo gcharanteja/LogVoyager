@@ -8,9 +8,9 @@ import sys
 import os
 import subprocess
 
-# Add the workspace to path
-WORKSPACE = "/project/workspace"
-RUNNER_PATH = os.path.join(WORKSPACE, "runner.py")
+# Get the directory where pymon is installed (dynamic)
+PYMON_DIR = os.path.dirname(os.path.realpath(__file__))
+RUNNER_PATH = os.path.join(PYMON_DIR, "runner.py")
 
 def main():
     if len(sys.argv) < 2:
@@ -42,6 +42,12 @@ def main():
 
 def run_with_monitoring():
     """Run a Python script through the runner for monitoring"""
+    # Check if runner.py exists
+    if not os.path.exists(RUNNER_PATH):
+        print(f"❌ Error: runner.py not found at {RUNNER_PATH}")
+        print(f"   Make sure you're in the LogVoyager directory")
+        sys.exit(1)
+    
     # Pass all arguments after 'pymon' to runner.py
     args = [sys.executable, RUNNER_PATH] + sys.argv[1:]
     
@@ -135,9 +141,20 @@ def show_status():
     print("📊 PyMon Status")
     print("=" * 50)
     print(f"🔧 Runner:     {RUNNER_PATH}")
-    print(f"🌐 Server:     http://localhost:5000")
-    print(f"💾 Data file:  {os.path.join(WORKSPACE, 'data.json')}")
-    print(f"📁 Workspace:  {WORKSPACE}")
+    print(f"📁 Install:    {PYMON_DIR}")
+    
+    # Load config to show server URL
+    config_file = os.path.join(PYMON_DIR, 'pymon.config.toml')
+    if os.path.exists(config_file):
+        try:
+            with open(config_file, 'r') as f:
+                for line in f:
+                    if 'url =' in line:
+                        url = line.split('=')[1].strip().strip('"')
+                        print(f"🌐 Server:     {url}")
+                        break
+        except:
+            print(f"🌐 Server:     http://localhost:5000")
     
     # Check if activated
     shell = os.environ.get('SHELL', '/bin/bash')
@@ -154,15 +171,6 @@ def show_status():
     
     if not activated:
         print("\n💡 Tip: Run 'pymon activate' to enable auto-monitoring")
-    
-    # Check if server is running
-    try:
-        import requests
-        response = requests.get("http://localhost:5000/view", timeout=2)
-        print("🟢 Server:    Running")
-    except:
-        print("🔴 Server:    Not running")
-        print("   Start with: python3 server.py")
 
 def show_help():
     """Show detailed help"""
@@ -206,16 +214,16 @@ def show_help():
    • Error tracking
 
 🌐 SERVER:
-   Start the server before monitoring:
-   python3 server.py
+   Configure server URL in pymon.config.toml
+   Or set environment variable:
+   export PYMON_SERVER_URL="https://your-server.com/post"
    
-   View logs:
-   curl http://localhost:5000/view
+   View logs via your server's API
 
 📁 FILES:
    • runner.py  - Monitoring wrapper
-   • server.py  - Data collection server
-   • data.json  - Stored execution logs
+   • server.py  - Data collection server (optional)
+   • pymon.config.toml - Configuration
    • pymon      - This CLI tool
 """)
 
