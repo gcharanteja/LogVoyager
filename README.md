@@ -17,9 +17,9 @@
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/pymon.git
-cd pymon
-
+git clone https://github.com/gcharanteja/LogVoyager
+cd LogVoyager
+$ chmod +x install.sh
 # Run the installer
 ./install.sh
 ```
