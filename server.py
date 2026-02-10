@@ -4,6 +4,7 @@ import uuid
 from pymongo import MongoClient
 from pymongo.errors import ConnectionFailure, OperationFailure
 import os
+import certifi
 
 app = Flask(__name__)
 
@@ -15,9 +16,19 @@ MONGODB_URI = os.environ.get(
 DATABASE_NAME = 'logvoyager'
 COLLECTION_NAME = 'logs'
 
-# Initialize MongoDB client
+# Initialize MongoDB client with proper SSL configuration
 try:
-    client = MongoClient(MONGODB_URI, serverSelectionTimeoutMS=5000)
+    client = MongoClient(
+        MONGODB_URI,
+        serverSelectionTimeoutMS=10000,
+        connectTimeoutMS=10000,
+        socketTimeoutMS=10000,
+        tls=True,
+        tlsCAFile=certifi.where(),  # Use certifi's CA bundle
+        retryWrites=True,
+        w='majority'
+    )
+    
     # Test connection
     client.admin.command('ping')
     db = client[DATABASE_NAME]
@@ -30,9 +41,16 @@ try:
     logs_collection.create_index('overview.hostname')
     
     print("✅ MongoDB connected successfully!")
+    print(f"   Database: {DATABASE_NAME}")
+    print(f"   Collection: {COLLECTION_NAME}")
     MONGODB_CONNECTED = True
 except ConnectionFailure as e:
     print(f"❌ MongoDB connection failed: {e}")
+    print("⚠️  Server will run in fallback mode (memory only)")
+    MONGODB_CONNECTED = False
+    logs_collection = None
+except Exception as e:
+    print(f"❌ Unexpected error connecting to MongoDB: {e}")
     print("⚠️  Server will run in fallback mode (memory only)")
     MONGODB_CONNECTED = False
     logs_collection = None

@@ -33,7 +33,7 @@ def load_config():
                         config['timeout'] = int(line.split('=')[1].strip())
         except Exception as e:
             print(f"Warning: Could not parse config file: {e}")
-            pass  # Use defaults if config file can't be loaded
+            pass
     
     return config
 
@@ -78,7 +78,7 @@ def get_system_metrics():
 
 
 def capture_command_output():
-    """Capture the output of a command along with system information"""
+    """Capture the output of a command in REAL-TIME while collecting data"""
     
     # Get the current command that was executed
     command_executed = ' '.join(sys.argv)
@@ -101,14 +101,85 @@ def capture_command_output():
     # Prepare the command to run (the original Python script)
     script_to_run = sys.argv[1] if len(sys.argv) > 1 else 'minimal_py_code.py'
     
+    # Buffers to capture output
+    stdout_lines = []
+    stderr_lines = []
+    
     try:
-        # Run the command and capture all output (stdout and stderr)
-        result = subprocess.run(
-            [sys.executable, script_to_run], 
-            capture_output=True, 
+        # Run the command with REAL-TIME output streaming
+        process = subprocess.Popen(
+            [sys.executable, script_to_run],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
+            bufsize=1,  # Line buffered
             cwd=cwd
         )
+        
+        # Read stdout and stderr in real-time
+        import select
+        
+        # For Windows compatibility, we need a different approach
+        if platform.system() == 'Windows':
+            # Windows doesn't support select on pipes, use threading
+            import threading
+            
+            def read_stdout():
+                for line in iter(process.stdout.readline, ''):
+                    if line:
+                        print(line, end='', flush=True)  # Print in real-time
+                        stdout_lines.append(line)
+            
+            def read_stderr():
+                for line in iter(process.stderr.readline, ''):
+                    if line:
+                        print(line, end='', file=sys.stderr, flush=True)  # Print in real-time
+                        stderr_lines.append(line)
+            
+            stdout_thread = threading.Thread(target=read_stdout)
+            stderr_thread = threading.Thread(target=read_stderr)
+            
+            stdout_thread.start()
+            stderr_thread.start()
+            
+            # Wait for process to complete
+            process.wait()
+            
+            # Wait for threads to finish reading
+            stdout_thread.join()
+            stderr_thread.join()
+            
+        else:
+            # Unix-like systems can use select
+            while True:
+                # Check if process has finished
+                if process.poll() is not None:
+                    # Read any remaining output
+                    remaining_stdout = process.stdout.read()
+                    remaining_stderr = process.stderr.read()
+                    
+                    if remaining_stdout:
+                        print(remaining_stdout, end='', flush=True)
+                        stdout_lines.append(remaining_stdout)
+                    if remaining_stderr:
+                        print(remaining_stderr, end='', file=sys.stderr, flush=True)
+                        stderr_lines.append(remaining_stderr)
+                    break
+                
+                # Read available output
+                readable, _, _ = select.select([process.stdout, process.stderr], [], [], 0.1)
+                
+                for stream in readable:
+                    line = stream.readline()
+                    if line:
+                        if stream == process.stdout:
+                            print(line, end='', flush=True)  # Print in real-time
+                            stdout_lines.append(line)
+                        else:
+                            print(line, end='', file=sys.stderr, flush=True)  # Print in real-time
+                            stderr_lines.append(line)
+        
+        return_code = process.returncode
         
         # Calculate runtime
         end_time = datetime.now()
@@ -126,7 +197,11 @@ def capture_command_output():
         # Get directory listing
         dir_listing = os.listdir(cwd)
         
-        # Combine stdout and stderr
+        # Join captured output
+        stdout_text = ''.join(stdout_lines)
+        stderr_text = ''.join(stderr_lines)
+        
+        # Build the structured output for sending to server
         all_output = f"Start time: {start_time.strftime('%B %d, %Y %I:%M:%S %p')}\n"
         all_output += f"Runtime: {runtime}\n"
         all_output += f"Tracked hours: {runtime}\n"
@@ -147,7 +222,7 @@ def capture_command_output():
             else:
                 size = os.path.getsize(item_path)
                 all_output += f"  [FILE] {item} ({size} bytes)\n"
-        all_output += f"Return code: {result.returncode}\n"
+        all_output += f"Return code: {return_code}\n"
         all_output += "\n--- SYSTEM METRICS BEFORE EXECUTION ---\n"
         for key, value in metrics_before.items():
             all_output += f"{key}: {value}\n"
@@ -157,17 +232,18 @@ def capture_command_output():
         all_output += "\n--- SYSTEM METRICS DIFFERENCE ---\n"
         for key, value in metrics_diff.items():
             all_output += f"{key}: {value}\n"
+        
         # Capture raw logs
         all_output += "\n--- STDOUT ---\n"
-        all_output += result.stdout
+        all_output += stdout_text
         all_output += "--- STDERR ---\n"
-        all_output += result.stderr
+        all_output += stderr_text
         
         # Also capture structured logs with timestamps if present
         all_output += "\n--- STRUCTURED LOGS ---\n"
         
         # Combine stdout and stderr for log parsing
-        combined_logs = result.stdout + result.stderr
+        combined_logs = stdout_text + stderr_text
         
         # Parse logs with timestamps
         import re
@@ -183,7 +259,6 @@ def capture_command_output():
                 timestamp = timestamp_match.group(1)
                 
                 # The actual log message might be on the next line
-                # Check if the current line has additional content after the timestamp
                 log_message = line[timestamp_match.end():].strip()
                 
                 # If the current line after timestamp is empty, look at the next line
@@ -209,7 +284,7 @@ def capture_command_output():
             all_output += "No timestamped logs found in output.\n"
         all_output += f"\n--- EXECUTION TIME ---\n{end_time.isoformat()}\n"
         
-        return all_output, result.returncode
+        return all_output, return_code
         
     except Exception as e:
         # Calculate runtime even in case of exception
@@ -227,6 +302,9 @@ def capture_command_output():
         
         # Get directory listing
         dir_listing = os.listdir(cwd)
+        
+        stdout_text = ''.join(stdout_lines)
+        stderr_text = ''.join(stderr_lines)
         
         error_output = f"Start time: {start_time.strftime('%B %d, %Y %I:%M:%S %p')}\n"
         error_output += f"Runtime: {runtime}\n"
@@ -259,36 +337,13 @@ def capture_command_output():
         for key, value in metrics_diff.items():
             error_output += f"{key}: {value}\n"
         
-        # Also capture structured logs with timestamps if present
+        error_output += "\n--- STDOUT ---\n"
+        error_output += stdout_text
+        error_output += "--- STDERR ---\n"
+        error_output += stderr_text
+        
         error_output += "\n--- STRUCTURED LOGS ---\n"
-        
-        # Since this is an exception case, there's no result.stdout/stderr
-        # But we can still include the exception in the log parsing
-        exception_text = f"Exception occurred: {str(e)}"
-        
-        # Parse logs with timestamps
-        import re
-        log_lines = [exception_text]  # Just the exception in this case
-        structured_logs = []
-        
-        for line in log_lines:
-            # Look for timestamp patterns like YYYY-MM-DD HH:MM:SS
-            timestamp_match = re.search(r'(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})', line)
-            if timestamp_match:
-                timestamp = timestamp_match.group(1)
-                log_message = line[timestamp_match.end():].strip()
-                if log_message.startswith('|'):
-                    log_message = log_message[1:].strip()
-                structured_logs.append({
-                    'timestamp': timestamp,
-                    'message': log_message
-                })
-        
-        if structured_logs:
-            for log_entry in structured_logs:
-                error_output += f"{log_entry['timestamp']} {log_entry['message']}\n"
-        else:
-            error_output += "No timestamped logs found in output.\n"
+        error_output += f"Exception occurred: {str(e)}\n"
         error_output += f"--- EXECUTION TIME ---\n{end_time.isoformat()}\n"
 
         return error_output, -1
@@ -315,44 +370,50 @@ def send_to_external_service(data, service_url=None):
         
         response = requests.post(service_url, json=payload, headers=headers, timeout=config['timeout'])
         
-        print(f"Data sent successfully to {service_url}")
-        print(f"Response status: {response.status_code}")
+        print(f"\n{'='*60}")
+        print(f"📊 Monitoring Summary")
+        print(f"{'='*60}")
+        print(f"✅ Data sent successfully to {service_url}")
+        print(f"   Response status: {response.status_code}")
         
         try:
             response_data = response.json()
-            print(f"Response preview: {str(response_data)[:200]}...")
+            if 'run_id' in response_data:
+                print(f"   Run ID: {response_data['run_id']}")
+            if 'total_logs' in response_data:
+                print(f"   Total logs in database: {response_data['total_logs']}")
+            print(f"   View at: {service_url.replace('/post', '/view')}")
         except:
-            print(f"Response text preview: {str(response.text)[:200]}...")
+            pass
+        
+        print(f"{'='*60}\n")
         
         return True, response
         
     except requests.exceptions.RequestException as e:
-        print(f"Failed to send data to {service_url}: {str(e)}")
+        print(f"\n⚠️  Failed to send data to {service_url}: {str(e)}")
+        print(f"   Data was captured but not uploaded")
         return False, None
     except Exception as e:
-        print(f"Unexpected error when sending data: {str(e)}")
+        print(f"\n⚠️  Unexpected error when sending data: {str(e)}")
         return False, None
 
 def main():
     if len(sys.argv) < 2:
-        print("Usage: python capture_and_send.py <script_to_run>")
+        print("Usage: python runner.py <script_to_run>")
         sys.exit(1)
     
-    # Capture all output from the command
+    print(f"🔍 PyMon - Monitoring: {sys.argv[1]}")
+    print(f"{'='*60}\n")
+    
+    # Capture all output from the command (with real-time streaming)
     captured_data, return_code = capture_command_output()
     
-    # Print the captured data to console (so user can see it too)
-    print(captured_data)
-    
-    # Send the captured data to an external service
+    # Send the captured data to an external service (AFTER script finishes)
     success, response = send_to_external_service(captured_data)
     
-    if success:
-        print("\nData successfully captured and sent to external service!")
-    else:
-        print("\nFailed to send data to external service.")
-        # Still exit with the original return code
-        sys.exit(return_code if return_code != 0 else 1)
+    # Exit with the original return code
+    sys.exit(return_code)
 
 if __name__ == "__main__":
     main()
