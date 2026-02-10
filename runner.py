@@ -9,6 +9,8 @@ import psutil
 import time
 import platform
 import subprocess
+import select
+import threading
 
 # Get the directory of this script
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
@@ -17,8 +19,8 @@ SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 def load_config():
     """Load configuration from pymon.config.toml or environment variables"""
     config = {
-        'server_url': os.environ.get('PYMON_SERVER_URL', 'http://localhost:5000/post'),
-        'timeout': int(os.environ.get('PYMON_TIMEOUT', '10'))
+        'server_url': os.environ.get('PYMON_SERVER_URL', 'https://logv.onrender.com/post'),
+        'timeout': int(os.environ.get('PYMON_TIMEOUT', '15'))
     }
     
     # Try to load from config file in the same directory as this script
@@ -26,14 +28,39 @@ def load_config():
     if os.path.exists(config_file):
         try:
             with open(config_file, 'r') as f:
-                for line in f:
-                    if 'url =' in line:
-                        config['server_url'] = line.split('=')[1].strip().strip('"')
-                    elif 'timeout =' in line:
-                        config['timeout'] = int(line.split('=')[1].strip())
+                content = f.read()
+                
+                # Simple TOML parser for our specific config
+                for line in content.split('\n'):
+                    line = line.strip()
+                    
+                    # Skip comments and empty lines
+                    if not line or line.startswith('#'):
+                        continue
+                    
+                    # Parse key = value lines
+                    if '=' in line and not line.startswith('['):
+                        key, value = line.split('=', 1)
+                        key = key.strip()
+                        value = value.strip().strip('"').strip("'")
+                        
+                        if key == 'url':
+                            config['server_url'] = value
+                        elif key == 'timeout':
+                            try:
+                                config['timeout'] = int(value)
+                            except:
+                                pass
+                                
+            print(f"📝 Config loaded from: {config_file}")
+            print(f"   Server URL: {config['server_url']}")
+            
         except Exception as e:
-            print(f"Warning: Could not parse config file: {e}")
-            pass
+            print(f"⚠️  Warning: Could not parse config file: {e}")
+            print(f"   Using default: {config['server_url']}")
+    else:
+        print(f"⚠️  Config file not found: {config_file}")
+        print(f"   Using default: {config['server_url']}")
     
     return config
 
@@ -117,13 +144,9 @@ def capture_command_output():
         )
         
         # Read stdout and stderr in real-time
-        import select
-        
         # For Windows compatibility, we need a different approach
         if platform.system() == 'Windows':
             # Windows doesn't support select on pipes, use threading
-            import threading
-            
             def read_stdout():
                 for line in iter(process.stdout.readline, ''):
                     if line:
