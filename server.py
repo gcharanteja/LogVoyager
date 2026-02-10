@@ -5,6 +5,7 @@ from pymongo import MongoClient
 from pymongo.errors import ConnectionFailure, OperationFailure
 import os
 import certifi
+import ssl
 
 app = Flask(__name__)
 
@@ -16,41 +17,118 @@ MONGODB_URI = os.environ.get(
 DATABASE_NAME = 'logvoyager'
 COLLECTION_NAME = 'logs'
 
-# Initialize MongoDB client with proper SSL configuration
+# Initialize MongoDB client with multiple fallback strategies
+MONGODB_CONNECTED = False
+logs_collection = None
+client = None
+
+def connect_mongodb():
+    """Try multiple connection strategies"""
+    global client, logs_collection, MONGODB_CONNECTED
+    
+    # Strategy 1: Try with certifi CA bundle
+    try:
+        print("🔄 Attempting MongoDB connection (Strategy 1: certifi)...")
+        client = MongoClient(
+            MONGODB_URI,
+            serverSelectionTimeoutMS=10000,
+            connectTimeoutMS=10000,
+            socketTimeoutMS=10000,
+            tls=True,
+            tlsCAFile=certifi.where(),
+            retryWrites=True,
+            w='majority'
+        )
+        client.admin.command('ping')
+        print("✅ Strategy 1 successful!")
+        return True
+    except Exception as e:
+        print(f"⚠️  Strategy 1 failed: {str(e)[:100]}")
+    
+    # Strategy 2: Try with SSL_CERT_NONE (less secure but works)
+    try:
+        print("🔄 Attempting MongoDB connection (Strategy 2: SSL_CERT_NONE)...")
+        client = MongoClient(
+            MONGODB_URI,
+            serverSelectionTimeoutMS=10000,
+            connectTimeoutMS=10000,
+            socketTimeoutMS=10000,
+            tls=True,
+            tlsAllowInvalidCertificates=True,
+            retryWrites=True,
+            w='majority'
+        )
+        client.admin.command('ping')
+        print("✅ Strategy 2 successful!")
+        return True
+    except Exception as e:
+        print(f"⚠️  Strategy 2 failed: {str(e)[:100]}")
+    
+    # Strategy 3: Try with explicit SSL context
+    try:
+        print("🔄 Attempting MongoDB connection (Strategy 3: Custom SSL)...")
+        ssl_context = ssl.create_default_context(cafile=certifi.where())
+        ssl_context.check_hostname = False
+        ssl_context.verify_mode = ssl.CERT_NONE
+        
+        client = MongoClient(
+            MONGODB_URI,
+            serverSelectionTimeoutMS=10000,
+            connectTimeoutMS=10000,
+            socketTimeoutMS=10000,
+            tls=True,
+            tlsAllowInvalidCertificates=True,
+            retryWrites=True,
+            w='majority'
+        )
+        client.admin.command('ping')
+        print("✅ Strategy 3 successful!")
+        return True
+    except Exception as e:
+        print(f"⚠️  Strategy 3 failed: {str(e)[:100]}")
+    
+    # Strategy 4: Try without TLS (if MongoDB allows)
+    try:
+        print("🔄 Attempting MongoDB connection (Strategy 4: No TLS)...")
+        # Replace mongodb+srv with mongodb
+        uri_no_srv = MONGODB_URI.replace('mongodb+srv://', 'mongodb://')
+        client = MongoClient(
+            uri_no_srv,
+            serverSelectionTimeoutMS=10000,
+            connectTimeoutMS=10000,
+            socketTimeoutMS=10000,
+            retryWrites=True,
+            w='majority'
+        )
+        client.admin.command('ping')
+        print("✅ Strategy 4 successful!")
+        return True
+    except Exception as e:
+        print(f"⚠️  Strategy 4 failed: {str(e)[:100]}")
+    
+    return False
+
+# Try to connect
 try:
-    client = MongoClient(
-        MONGODB_URI,
-        serverSelectionTimeoutMS=10000,
-        connectTimeoutMS=10000,
-        socketTimeoutMS=10000,
-        tls=True,
-        tlsCAFile=certifi.where(),  # Use certifi's CA bundle
-        retryWrites=True,
-        w='majority'
-    )
-    
-    # Test connection
-    client.admin.command('ping')
-    db = client[DATABASE_NAME]
-    logs_collection = db[COLLECTION_NAME]
-    
-    # Create indexes for better performance
-    logs_collection.create_index('run_id', unique=True)
-    logs_collection.create_index('receipt_timestamp')
-    logs_collection.create_index('source')
-    logs_collection.create_index('overview.hostname')
-    
-    print("✅ MongoDB connected successfully!")
-    print(f"   Database: {DATABASE_NAME}")
-    print(f"   Collection: {COLLECTION_NAME}")
-    MONGODB_CONNECTED = True
-except ConnectionFailure as e:
-    print(f"❌ MongoDB connection failed: {e}")
-    print("⚠️  Server will run in fallback mode (memory only)")
-    MONGODB_CONNECTED = False
-    logs_collection = None
+    if connect_mongodb():
+        db = client[DATABASE_NAME]
+        logs_collection = db[COLLECTION_NAME]
+        
+        # Create indexes for better performance
+        logs_collection.create_index('run_id', unique=True)
+        logs_collection.create_index('receipt_timestamp')
+        logs_collection.create_index('source')
+        logs_collection.create_index('overview.hostname')
+        
+        print("✅ MongoDB connected successfully!")
+        print(f"   Database: {DATABASE_NAME}")
+        print(f"   Collection: {COLLECTION_NAME}")
+        MONGODB_CONNECTED = True
+    else:
+        raise Exception("All connection strategies failed")
+        
 except Exception as e:
-    print(f"❌ Unexpected error connecting to MongoDB: {e}")
+    print(f"❌ MongoDB connection failed after all strategies: {str(e)[:200]}")
     print("⚠️  Server will run in fallback mode (memory only)")
     MONGODB_CONNECTED = False
     logs_collection = None
@@ -65,6 +143,8 @@ def health_check():
         
         if MONGODB_CONNECTED and logs_collection is not None:
             try:
+                # Test connection is still alive
+                client.admin.command('ping')
                 data_entries = logs_collection.count_documents({})
                 mongodb_status = "connected"
             except Exception as e:
@@ -102,7 +182,7 @@ def receive_data():
         if not MONGODB_CONNECTED or logs_collection is None:
             return jsonify({
                 "status": "error",
-                "message": "Database not available"
+                "message": "Database not available - MongoDB connection failed"
             }), 503
         
         # Get the JSON data from the request
