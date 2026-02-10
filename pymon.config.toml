@@ -1,6 +1,6 @@
 [server]
 # Remote server URL - users can override this
-url = "https://abc.com/post"
+url = "https://logv.onrender.com/post"
 # url = "http://localhost:5000/post"  # for local testing
 timeout = 10
 
