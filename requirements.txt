@@ -65,3 +65,5 @@ werkzeug==3.1.5
 Flask
 pymongo
 dnspython
+
+gunicorn>=23.0.0
